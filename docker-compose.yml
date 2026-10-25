@@ -6,8 +6,8 @@ services:
       - SERVICE_FQDN_APP_3541
       - PORT=3541
       - DATA_DIR=/data
-      - DATABASE_URL=postgres://carnet:${POSTGRES_PASSWORD:-VJEcDNyeXnDKXSISoi8ZGzgmR6CGrbWH}@db:5432/carnet
-      - SIGNUP_CODE=${SIGNUP_CODE:-M4SA-WJJZ}
+      - DATABASE_URL=postgres://carnet:${SERVICE_PASSWORD_POSTGRES}@db:5432/carnet
+      - SIGNUP_CODE=${SERVICE_PASSWORD_SIGNUP}
     volumes:
       - photos:/data
     depends_on:
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=carnet
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-VJEcDNyeXnDKXSISoi8ZGzgmR6CGrbWH}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
       - POSTGRES_DB=carnet
     volumes:
       - pgdata:/var/lib/postgresql/data
