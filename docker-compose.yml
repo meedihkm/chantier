@@ -3,7 +3,6 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      - SERVICE_FQDN_APP_3541
       - PORT=3541
       - DATA_DIR=/data
       - DATABASE_URL=postgres://carnet:${SERVICE_PASSWORD_POSTGRES}@db:5432/carnet
@@ -12,8 +11,8 @@ services:
       - photos:/data
     depends_on:
       - db
-    expose:
-      - "3541"
+   ports:
+      - "3541:3541"
   db:
     image: postgres:16-alpine
     restart: unless-stopped
