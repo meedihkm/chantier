@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carnet de chantier</title>
+<meta name="theme-color" content="#1f4f8f">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><h1>Carnet de chantier</h1><p class="sub"><span id="who"></span><span id="sync"></span></p></div><button id="logout">Déconnexion</button></div>
+
+  <div class="page">
+    <div class="day"><div class="big" id="dayLabel"></div><input type="date" id="date" aria-label="Date de la journée"></div>
+    <div class="hours">
+      <div><label for="tin">Arrivée</label><input type="time" id="tin" value="08:00"></div>
+      <div><label for="tout">Heure de sortie</label><input type="time" id="tout"></div>
+      <div class="ot" id="ot"></div>
+    </div>
+    <label for="text" class="sub" style="display:block;margin:0 0 4px">Qu’est-ce qui a été accompli ?</label>
+    <textarea id="text" placeholder="Ex. : coulage du plancher haut R+3, 18 m³ de béton, vibrage terminé à 15 h."></textarea>
+    <div class="row">
+      <select id="cat" aria-label="Type de travaux">
+        <option>Terrassement</option><option>Fondations</option><option>Ferraillage</option><option>Coffrage</option><option>Bétonnage</option><option>Maçonnerie</option><option>Étanchéité</option><option>Réseaux / lots techniques</option><option>Finitions</option><option>Réunion / visite</option><option>Réserve / problème</option><option selected>Autre</option>
+      </select>
+      <input type="text" id="zone" placeholder="Zone ou niveau (ex. R+3, axe B)" aria-label="Zone ou niveau">
+    </div>
+    <div id="staged" class="ph"></div>
+    <div class="act"><button id="pickNote">Joindre des photos</button><button class="p" id="add">Ajouter la note</button></div>
+    <input type="file" id="fileNote" accept="image/*" multiple hidden>
+  </div>
+
+  <div id="list"></div>
+
+  <h2>Photos de la journée</h2>
+  <div id="gal"></div>
+  <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button id="pickDay">Ajouter des photos</button><button id="share" hidden>Partager les photos</button></div>
+  <input type="file" id="fileDay" accept="image/*" multiple hidden>
+
+  <h2>Envoyer</h2>
+  <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button class="p" id="wa">Envoyer par WhatsApp</button><button id="copy">Copier le compte rendu</button></div>
+  <p class="sub" style="margin:12px 0 4px">Numéro WhatsApp du comptable (facultatif, format 213550123456)</p>
+  <input type="text" id="num" inputmode="tel" placeholder="213550123456" aria-label="Numéro WhatsApp du comptable">
+
+  <h2>Heures supplémentaires du mois</h2>
+  <div class="note">
+    <div id="mtotal"></div>
+    <div class="act" style="justify-content:flex-start"><button id="waM">Envoyer le récapitulatif du mois</button></div>
+    <div id="otList" class="hist"></div>
+    <p class="sub" style="margin:14px 0 4px">Ajouter une journée passée (heures sup. seulement)</p>
+    <div class="hours" style="grid-template-columns:auto auto 1fr"><div><label for="pd">Date</label><input type="date" id="pd"></div><div><label for="po">Sortie</label><input type="time" id="po"></div><div><button class="p" id="padd">Enregistrer</button></div></div>
+  </div>
+
+  <h2>Journées précédentes</h2>
+  <input type="search" id="q" placeholder="Rechercher dans toutes les notes" aria-label="Rechercher">
+  <div class="hist" id="hist"></div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<div id="auth" class="overlay" hidden><div class="wrap narrow">
+  <h1>Carnet de chantier</h1>
+  <p class="sub" id="authSub">Connectez-vous à votre carnet.</p>
+  <label for="au">Identifiant</label><input type="text" id="au" autocomplete="username" autocapitalize="none" spellcheck="false">
+  <label for="ap">Mot de passe</label><input type="password" id="ap" autocomplete="current-password">
+  <div id="codeRow" hidden><label for="ac">Code d’inscription (si demandé)</label><input type="text" id="ac" autocomplete="off"></div>
+  <div class="act"><button id="swap">Créer un compte</button><button class="p" id="aok">Se connecter</button></div>
+  <p id="aerr" class="err"></p>
+</div></div>
+
+<div id="viewer" class="overlay dark" hidden>
+  <img id="vimg" alt="Photo du chantier">
+  <div class="act"><button id="vdel">Supprimer</button><button class="p" id="vclose">Fermer</button></div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
