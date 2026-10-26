@@ -18,7 +18,10 @@ function uuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); });
 }
 function mins(t) { if (!t) return null; var p = t.split(":"); return +p[0] * 60 + +p[1]; }
-function otOf(d) { var j = S.days[d]; if (!j || !j.out) return 0; var o = mins(j.out); return o > 960 ? o - 960 : 0; }
+function isFri(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]).getDay() === 5; }
+function worked(d) { var j = S.days[d]; return !!((j && j.out) || dayNotes(d).length); }
+function fridayMins(d) { var j = S.days[d]; if (!j || !j.out) return 0; var m = mins(j.out) - mins(j.arr || "08:00"); return m > 0 ? m : 0; }
+function otOf(d) { if (isFri(d)) return 0; var j = S.days[d]; if (!j || !j.out) return 0; var o = mins(j.out); return o > 960 ? o - 960 : 0; }
 function hm(m) { return Math.floor(m / 60) + " h " + pad(m % 60); }
 function dayNotes(d) { return S.notes.filter(function (n) { return n.date === d; }).sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : 0; }); }
 function allPhotos(d) { return S.photos.filter(function (p) { return p.date === d; }).concat(up.filter(function (u) { return u.date === d; })); }
@@ -69,7 +72,7 @@ function applyRemote(r) {
   if (S.user !== r.username) restore(r.username);
   try { localStorage.setItem("carnet:user", r.username); } catch (e) {}
   var days = {}, notes = [];
-  r.days.forEach(function (x) { days[x.date] = { arr: x.arr, out: x.out }; });
+  r.days.forEach(function (x) { days[x.date] = { arr: x.arr, out: x.out, sent: x.sent || "" }; });
   notes = r.notes.slice();
   Object.keys(S.pending).forEach(function (d) {
     if (S.days[d]) days[d] = S.days[d]; else delete days[d];
@@ -98,7 +101,7 @@ function flush() {
   return Object.keys(S.pending).reduce(function (p, d) {
     return p.then(function () {
       var v = S.pending[d], j = S.days[d] || {};
-      return api("PUT", "/api/day/" + d, { arr: j.arr || "08:00", out: j.out || "", notes: dayNotes(d) }).then(function () { if (S.pending[d] === v) delete S.pending[d]; persist(); });
+      return api("PUT", "/api/day/" + d, { arr: j.arr || "08:00", out: j.out || "", sent: j.sent || "", notes: dayNotes(d) }).then(function () { if (S.pending[d] === v) delete S.pending[d]; persist(); });
     });
   }, Promise.resolve()).then(uploadAll).then(function () { setSync("Synchronisé."); })
     .catch(function (e) { if (!e || e.code !== 401) setSync("Hors ligne : envoi plus tard."); })
@@ -125,10 +128,14 @@ function thumbs(list) {
 }
 function showOt(d) {
   var m = otOf(d), j = S.days[d] || {};
-  $("ot").innerHTML = !j.out ? "Saisissez l’heure de sortie." : (m ? "Heures sup. : <strong>" + hm(m) + "</strong>" : "Pas d’heure sup. (sortie avant 16 h)");
+  if (isFri(d)) { var fm = fridayMins(d); $("ot").innerHTML = worked(d) ? "Vendredi (week-end) : <strong>travaillé</strong>" + (fm ? " · " + hm(fm) : (j.out ? "" : " · saisissez l’heure de sortie")) : "Vendredi (week-end) : non travaillé"; }
+  else $("ot").innerHTML = !j.out ? "Saisissez l’heure de sortie." : (m ? "Heures sup. : <strong>" + hm(m) + "</strong>" : "Pas d’heure sup. (sortie avant 16 h)");
+  var show = isFri(d) ? worked(d) : otOf(d) > 0; $("sentRow").hidden = !show; $("sent").checked = !!j.sent;
   var pre = d.slice(0, 7), tot = 0, ks = Object.keys(S.days).filter(function (k) { return k.slice(0, 7) === pre && otOf(k); }).sort(), lh = "";
-  ks.forEach(function (k) { tot += otOf(k); lh += '<button data-d="' + k + '"><span style="text-transform:capitalize">' + fmt(k) + '</span><span>sortie ' + S.days[k].out + ' → ' + hm(otOf(k)) + '</span></button>'; });
+  ks.forEach(function (k) { tot += otOf(k); lh += '<button data-d="' + k + '"><span style="text-transform:capitalize">' + fmt(k) + '</span><span>sortie ' + S.days[k].out + ' → ' + hm(otOf(k)) + (S.days[k].sent ? ' ✓' : '') + '</span></button>'; });
   $("mtotal").innerHTML = "Total en " + monthName(pre) + " : <strong>" + hm(tot) + "</strong> sur " + ks.length + " jour" + (ks.length > 1 ? "s" : "");
+  var nf = Object.keys(S.days).filter(function (k) { return k.slice(0, 7) === pre && isFri(k) && worked(k); }).length;
+  if (nf) $("mtotal").innerHTML += "<br>Vendredis travaillés : <strong>" + nf + "</strong>";
   $("otList").innerHTML = lh;
 }
 function render() {
@@ -149,7 +156,7 @@ function render() {
   var free = ph.filter(function (p) { return !p.note || !ids[p.note]; });
   $("gal").innerHTML = free.length ? '<div class="ph">' + thumbs(free) + '</div>' : '<div class="empty">Aucune photo pour le moment.</div>';
   $("share").hidden = !(ph.length && navigator.canShare);
-  renderHist();
+  renderHist(); renderReport();
 }
 function renderHist() {
   var q = $("q").value.trim().toLowerCase(), cur = dateEl.value, map = {}, html = "";
@@ -238,13 +245,13 @@ $("list").addEventListener("click", function (e) {
   up = up.filter(function (u) { return u.note !== id; }); S.photos = S.photos.filter(function (p) { return p.note !== id; });
   persist(); pushDay(n.date); render();
 });
-function onTimes() { var d = dateEl.value; S.days[d] = { arr: $("tin").value, out: $("tout").value }; persist(); pushDay(d); showOt(d); }
+function onTimes() { var d = dateEl.value; var pj = S.days[d] || {}; S.days[d] = { arr: $("tin").value, out: $("tout").value, sent: pj.out === $("tout").value ? (pj.sent || "") : "" }; persist(); pushDay(d); showOt(d); renderReport(); }
 $("tin").onchange = onTimes; $("tout").onchange = onTimes;
 $("padd").onclick = function () {
   var d = $("pd").value, o = $("po").value;
   if (!d || !o) { toast("Choisissez la date et l’heure de sortie"); return; }
-  var j = S.days[d] || {}; S.days[d] = { arr: j.arr || "08:00", out: o }; persist(); pushDay(d); dateEl.value = d; render();
-  toast(otOf(d) ? "Heures sup. enregistrées : " + hm(otOf(d)) : "Enregistré (pas d’heure sup.)");
+  var j = S.days[d] || {}; S.days[d] = { arr: j.arr || "08:00", out: o, sent: j.out === o ? (j.sent || "") : "" }; persist(); pushDay(d); dateEl.value = d; render();
+  toast(isFri(d) ? "Vendredi enregistré (travaillé)" : otOf(d) ? "Heures sup. enregistrées : " + hm(otOf(d)) : "Enregistré (pas d’heure sup.)");
 };
 $("otList").onclick = $("hist").onclick = function (e) {
   var b = e.target.closest("button"); if (!b) return;
@@ -252,32 +259,79 @@ $("otList").onclick = $("hist").onclick = function (e) {
 };
 $("q").oninput = renderHist; dateEl.onchange = render;
 
-/* ---------- compte rendu et WhatsApp ---------- */
-function report(d) {
-  var ns = dayNotes(d), j = S.days[d] || {}, m = otOf(d), np = allPhotos(d).length, out = "Compte rendu de chantier — " + fmt(d) + "\n";
-  out += "Arrivée : " + (j.arr || "08:00") + (j.out ? " · Sortie : " + j.out : "") + "\n";
-  if (j.out) out += m ? "Heures supplémentaires (après 16 h) : " + hm(m) + "\n" : "Pas d’heure supplémentaire\n";
-  if (ns.length) { out += "\nTravaux réalisés :\n"; ns.forEach(function (n) { out += "• " + n.time + " [" + n.cat + (n.zone ? " – " + n.zone : "") + "] " + n.text + "\n"; }); }
-  if (np) out += "\nPhotos enregistrées : " + np + "\n";
-  return (ns.length || j.out) ? out : "";
+/* ---------- rapport pour le comptable (heures non encore envoyées) ---------- */
+function iso(dt) { return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()); }
+function parseD(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function fmtShort(d) { return parseD(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
+function noteLines(ns) { return ns.map(function (n) { return "   - " + n.time + " [" + n.cat + (n.zone ? " – " + n.zone : "") + "] " + n.text.replace(/\n/g, "\n     "); }); }
+function allDates() { var m = {}; Object.keys(S.days).forEach(function (d) { m[d] = 1; }); S.notes.forEach(function (n) { m[n.date] = 1; }); return Object.keys(m).sort(); }
+function isPending(d) { var x = S.days[d] || {}; if (x.sent) return false; return isFri(d) ? worked(d) : otOf(d) > 0; }
+function pendingDates() { return allDates().filter(isPending); }
+function unsentReport() {
+  var pend = pendingDates(); if (!pend.length) return "";
+  var endD = today() > pend[pend.length - 1] ? today() : pend[pend.length - 1], c = parseD(pend[0]), e = parseD(endD), ds = [];
+  while (c <= e && ds.length < 400) { ds.push(iso(c)); c.setDate(c.getDate() + 1); }
+  var tot = 0, nOt = 0, lines = [], fri = [], nFri = 0, nFriAll = 0, friMin = 0;
+  ds.forEach(function (d) {
+    var ns = dayNotes(d), x = S.days[d] || {}, pend1 = isPending(d);
+    if (isFri(d)) {
+      nFriAll++;
+      if (worked(d)) {
+        nFri++; var fm = fridayMins(d); friMin += fm;
+        fri.push("• " + fmt(d) + " : TRAVAILLÉ" + (x.out ? " (" + (x.arr || "08:00") + " → " + x.out + (fm ? ", " + hm(fm) : "") + ")" : " (heures non saisies)") + (pend1 ? "" : " — déjà envoyé"));
+        if (pend1) noteLines(ns).forEach(function (l) { fri.push(l); });
+      } else fri.push("• " + fmt(d) + " : non travaillé");
+      return;
+    }
+    if (!pend1) return;
+    var m = otOf(d); tot += m; nOt++;
+    lines.push("• " + fmt(d) + " — sortie " + x.out + " → " + hm(m) + " supplémentaires");
+    noteLines(ns).forEach(function (l) { lines.push(l); });
+  });
+  var out = "RAPPORT D’HEURES SUPPLÉMENTAIRES\nHeures non encore envoyées, du " + fmtShort(pend[0]) + " au " + fmtShort(endD) + "\nÉtabli le " + fmtShort(today()) + "\nJournée normale : 08 h à 16 h (heures sup. après 16 h)\n\n";
+  out += nOt ? lines.join("\n") + "\n\nTotal heures supplémentaires : " + hm(tot) + " sur " + nOt + " jour" + (nOt > 1 ? "s" : "") + "\n" : "Aucune heure supplémentaire en attente.\n";
+  out += "\nVENDREDIS (week-end)\n" + (fri.length ? fri.join("\n") + "\nVendredis travaillés : " + nFri + " sur " + nFriAll + (friMin ? " (" + hm(friMin) + ")" : "") + "\n" : "Aucun vendredi sur la période.\n");
+  return out;
 }
-function monthReport() {
-  var pre = dateEl.value.slice(0, 7), tot = 0, out = "Heures supplémentaires — " + monthName(pre) + "\n(journée normale : 08 h à 16 h)\n\n";
-  var ks = Object.keys(S.days).filter(function (k) { return k.slice(0, 7) === pre && otOf(k); }).sort();
-  ks.forEach(function (k) { tot += otOf(k); out += "• " + fmt(k) + " : sortie " + S.days[k].out + " → " + hm(otOf(k)) + "\n"; });
-  return ks.length ? out + "\nTotal : " + hm(tot) : "";
+function renderReport() {
+  $("rep").value = unsentReport() || "Aucune heure supplémentaire en attente d’envoi.";
+  var p = pendingDates(), n = 0, m = 0, f = 0;
+  p.forEach(function (d) { if (isFri(d)) f++; else { n++; m += otOf(d); } });
+  $("pendInfo").innerHTML = p.length ? "En attente d’envoi : <strong>" + n + "</strong> jour" + (n > 1 ? "s" : "") + " (" + hm(m) + ")" + (f ? " · <strong>" + f + "</strong> vendredi" + (f > 1 ? "s" : "") + " travaillé" + (f > 1 ? "s" : "") : "") : "Tout est envoyé.";
 }
-function send(text) {
-  if (!text) { toast("Rien à envoyer pour l’instant"); return; }
-  var url = "https://wa.me/" + S.num + "?text=" + encodeURIComponent(text), w = null;
-  try { w = window.open(url, "_blank"); } catch (e) {}
-  if (!w) { try { navigator.clipboard.writeText(text); toast("Texte copié : collez-le dans WhatsApp"); } catch (e) { prompt("Copiez le texte :", text); } }
+$("mark").onclick = function () {
+  var p = pendingDates(); if (!p.length) { toast("Rien en attente"); return; }
+  var t = today(); p.forEach(function (d) { var x = S.days[d] || (S.days[d] = { arr: "08:00", out: "" }); x.sent = t; });
+  try { localStorage.setItem("carnet:last:" + S.user, JSON.stringify(p)); } catch (e) {}
+  persist(); p.forEach(function (d) { pushDay(d); }); render(); toast("Marqué comme envoyé (" + p.length + " jour" + (p.length > 1 ? "s" : "") + ")");
+};
+$("undo").onclick = function () {
+  var p = []; try { p = JSON.parse(localStorage.getItem("carnet:last:" + S.user) || "[]"); } catch (e) {}
+  if (!p.length) { toast("Rien à annuler"); return; }
+  p.forEach(function (d) { if (S.days[d]) S.days[d].sent = ""; });
+  try { localStorage.removeItem("carnet:last:" + S.user); } catch (e) {}
+  persist(); p.forEach(function (d) { pushDay(d); }); render(); toast("Dernier marquage annulé");
+};
+$("sent").onchange = function () {
+  var d = dateEl.value, x = S.days[d] || (S.days[d] = { arr: "08:00", out: "" });
+  x.sent = this.checked ? today() : ""; persist(); pushDay(d); render();
+};
+function copyText(t) {
+  try { if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t); } catch (e) {}
+  return new Promise(function (ok, ko) {
+    var ta = document.createElement("textarea"); ta.value = t; ta.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(ta); ta.select();
+    var r = false; try { r = document.execCommand("copy"); } catch (e) {} document.body.removeChild(ta); r ? ok() : ko();
+  });
 }
-$("wa").onclick = function () { send(report(dateEl.value)); };
-$("waM").onclick = function () { send(monthReport()); };
 $("copy").onclick = function () {
-  var t = report(dateEl.value); if (!t) { toast("Rien à copier"); return; }
-  try { navigator.clipboard.writeText(t).then(function () { toast("Compte rendu copié"); }, function () { prompt("Copiez le texte :", t); }); } catch (e) { prompt("Copiez le texte :", t); }
+  var t = unsentReport(); if (!t) { toast("Choisissez la période du rapport"); return; }
+  copyText(t).then(function () { toast("Rapport copié"); }, function () { $("rep").select(); toast("Sélectionnez le texte et copiez-le"); });
+};
+$("wa").onclick = function () {
+  var t = unsentReport(); if (!t) { toast("Choisissez la période du rapport"); return; }
+  var base = "https://wa.me/" + S.num, w = null, long = t.length > 1500;
+  try { w = window.open(long ? base : base + "?text=" + encodeURIComponent(t), "_blank"); } catch (e) {}
+  if (long || !w) copyText(t).then(function () { toast("Rapport copié : collez-le dans WhatsApp"); }, function () { toast("Copiez le rapport affiché puis collez-le dans WhatsApp"); });
 };
 $("num").onchange = function () { S.num = $("num").value.replace(/\D/g, ""); persist(); api("PUT", "/api/settings", { num: S.num }).catch(function () {}); };
 
