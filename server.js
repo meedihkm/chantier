@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS days(user_id uuid NOT NULL REFERENCES users ON DELETE
 CREATE TABLE IF NOT EXISTS notes(id text NOT NULL, user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE, day date NOT NULL, time text NOT NULL, cat text NOT NULL, zone text NOT NULL DEFAULT '', body text NOT NULL, PRIMARY KEY(user_id, id));
 CREATE INDEX IF NOT EXISTS notes_day ON notes(user_id, day);
 CREATE TABLE IF NOT EXISTS photos(id uuid NOT NULL, user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE, day date NOT NULL, note_id text, size int NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(user_id, id));
-CREATE INDEX IF NOT EXISTS photos_day ON photos(user_id, day);`;
+CREATE INDEX IF NOT EXISTS photos_day ON photos(user_id, day);
+ALTER TABLE days ADD COLUMN IF NOT EXISTS sent_on date;`;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/, TIME = /^([01]\d|2[0-3]):[0-5]\d$/, UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, NID = /^[\w-]{1,40}$/;
 const str = (v, n) => String(v == null ? "" : v).slice(0, n);
@@ -81,12 +82,12 @@ async function api(req, res, url) {
   if (p === "/api/data" && m === "GET") {
     const q = (s) => pool.query(s, [U.id]);
     const [d, n, ph] = await Promise.all([
-      q("SELECT day::text d, t_in, t_out FROM days WHERE user_id=$1"),
+      q("SELECT day::text d, t_in, t_out, sent_on::text s FROM days WHERE user_id=$1"),
       q("SELECT id, day::text d, time, cat, zone, body FROM notes WHERE user_id=$1 ORDER BY day, time"),
       q("SELECT id, day::text d, note_id FROM photos WHERE user_id=$1 ORDER BY created_at")]);
     return json(res, 200, {
       username: U.username, num: U.wa_number,
-      days: d.rows.map(r => ({ date: r.d, arr: r.t_in, out: r.t_out })),
+      days: d.rows.map(r => ({ date: r.d, arr: r.t_in, out: r.t_out, sent: r.s || "" })),
       notes: n.rows.map(r => ({ id: r.id, date: r.d, time: r.time, cat: r.cat, zone: r.zone, text: r.body })),
       photos: ph.rows.map(r => ({ id: r.id, date: r.d, note: r.note_id }))
     });
@@ -103,7 +104,7 @@ async function api(req, res, url) {
     const gone = [], c = await pool.connect();
     try {
       await c.query("BEGIN");
-      if (notes.length || out) await c.query("INSERT INTO days(user_id,day,t_in,t_out) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,day) DO UPDATE SET t_in=$3, t_out=$4", [U.id, date, arr, out]);
+      if (notes.length || out) await c.query("INSERT INTO days(user_id,day,t_in,t_out,sent_on) VALUES($1,$2,$3,$4,$5::date) ON CONFLICT(user_id,day) DO UPDATE SET t_in=$3, t_out=$4, sent_on=$5::date", [U.id, date, arr, out, DATE.test(b.sent) ? b.sent : null]);
       else await c.query("DELETE FROM days WHERE user_id=$1 AND day=$2", [U.id, date]);
       const rm = await c.query("DELETE FROM notes WHERE user_id=$1 AND day=$2 AND NOT (id = ANY($3)) RETURNING id", [U.id, date, notes.map(n => n.id)]);
       if (rm.rowCount) {
