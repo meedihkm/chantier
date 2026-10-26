@@ -269,28 +269,22 @@ function isPending(d) { var x = S.days[d] || {}; if (x.sent) return false; retur
 function pendingDates() { return allDates().filter(isPending); }
 function unsentReport() {
   var pend = pendingDates(); if (!pend.length) return "";
-  var endD = today() > pend[pend.length - 1] ? today() : pend[pend.length - 1], c = parseD(pend[0]), e = parseD(endD), ds = [];
-  while (c <= e && ds.length < 400) { ds.push(iso(c)); c.setDate(c.getDate() + 1); }
-  var tot = 0, nOt = 0, lines = [], fri = [], nFri = 0, nFriAll = 0, friMin = 0;
-  ds.forEach(function (d) {
-    var ns = dayNotes(d), x = S.days[d] || {}, pend1 = isPending(d);
+  var tot = 0, nOt = 0, lines = [], fri = [];
+  pend.forEach(function (d) {
+    var ns = dayNotes(d), x = S.days[d] || {};
     if (isFri(d)) {
-      nFriAll++;
-      if (worked(d)) {
-        nFri++; var fm = fridayMins(d); friMin += fm;
-        fri.push("• " + fmt(d) + " : TRAVAILLÉ" + (x.out ? " (" + (x.arr || "08:00") + " → " + x.out + (fm ? ", " + hm(fm) : "") + ")" : " (heures non saisies)") + (pend1 ? "" : " — déjà envoyé"));
-        if (pend1) noteLines(ns).forEach(function (l) { fri.push(l); });
-      } else fri.push("• " + fmt(d) + " : non travaillé");
+      var fm = fridayMins(d);
+      fri.push("• " + fmt(d) + " : travaillé" + (x.out ? " (" + (x.arr || "08:00") + " → " + x.out + (fm ? ", " + hm(fm) : "") + ")" : ""));
+      noteLines(ns).forEach(function (l) { fri.push(l); });
       return;
     }
-    if (!pend1) return;
     var m = otOf(d); tot += m; nOt++;
-    lines.push("• " + fmt(d) + " — sortie " + x.out + " → " + hm(m) + " supplémentaires");
+    lines.push("• " + fmt(d) + " — sortie " + x.out + " → " + hm(m));
     noteLines(ns).forEach(function (l) { lines.push(l); });
   });
-  var out = "RAPPORT D’HEURES SUPPLÉMENTAIRES\nHeures non encore envoyées, du " + fmtShort(pend[0]) + " au " + fmtShort(endD) + "\nÉtabli le " + fmtShort(today()) + "\nJournée normale : 08 h à 16 h (heures sup. après 16 h)\n\n";
-  out += nOt ? lines.join("\n") + "\n\nTotal heures supplémentaires : " + hm(tot) + " sur " + nOt + " jour" + (nOt > 1 ? "s" : "") + "\n" : "Aucune heure supplémentaire en attente.\n";
-  out += "\nVENDREDIS (week-end)\n" + (fri.length ? fri.join("\n") + "\nVendredis travaillés : " + nFri + " sur " + nFriAll + (friMin ? " (" + hm(friMin) + ")" : "") + "\n" : "Aucun vendredi sur la période.\n");
+  var out = "TOTAL HEURES SUPPLÉMENTAIRES À ENVOYER : " + hm(tot) + "\n(" + nOt + " jour" + (nOt > 1 ? "s" : "") + " · du " + fmtShort(pend[0]) + " au " + fmtShort(pend[pend.length - 1]) + " · heures après 16 h)\n";
+  if (nOt) out += "\nDÉTAIL PAR JOURNÉE\n" + lines.join("\n") + "\n";
+  if (fri.length) out += "\nVENDREDIS TRAVAILLÉS (week-end, non inclus dans le total)\n" + fri.join("\n") + "\n";
   return out;
 }
 function renderReport() {
