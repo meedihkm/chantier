@@ -263,7 +263,7 @@ $("q").oninput = renderHist; dateEl.onchange = render;
 function iso(dt) { return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()); }
 function parseD(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
 function fmtShort(d) { return parseD(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
-function noteLines(ns) { return ns.map(function (n) { return "   - " + n.time + " [" + n.cat + (n.zone ? " – " + n.zone : "") + "] " + n.text.replace(/\n/g, "\n     "); }); }
+function noteLines(ns) { return ns.map(function (n) { return "   - [" + n.cat + (n.zone ? " – " + n.zone : "") + "] " + n.text.replace(/\n/g, "\n     "); }); }
 function allDates() { var m = {}; Object.keys(S.days).forEach(function (d) { m[d] = 1; }); S.notes.forEach(function (n) { m[n.date] = 1; }); return Object.keys(m).sort(); }
 function isPending(d) { var x = S.days[d] || {}; if (x.sent) return false; return isFri(d) ? worked(d) : otOf(d) > 0; }
 function pendingDates() { return allDates().filter(isPending); }
