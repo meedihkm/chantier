@@ -13,59 +13,126 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><div><h1>Carnet de chantier</h1><p class="sub"><span id="who"></span><span id="sync"></span></p></div><button id="logout">Déconnexion</button></div>
+  <div class="top"><div><h1>Carnet de chantier</h1><p class="sub"><span id="who"></span><span id="sync"></span></p></div></div>
 
-  <div class="page">
-    <div class="day"><div class="big" id="dayLabel"></div><input type="date" id="date" aria-label="Date de la journée"></div>
-    <div class="hours">
-      <div><label for="tin">Arrivée</label><input type="time" id="tin" value="08:00"></div>
-      <div><label for="tout">Heure de sortie</label><input type="time" id="tout"></div>
-      <div class="ot" id="ot"></div>
-    </div>
-    <label id="sentRow" class="chk" hidden><input type="checkbox" id="sent"> Déjà envoyé au comptable</label>
-    <label for="text" class="sub" style="display:block;margin:0 0 4px">Qu’est-ce qui a été accompli ?</label>
-    <textarea id="text" placeholder="Ex. : coulage du plancher haut R+3, 18 m³ de béton, vibrage terminé à 15 h."></textarea>
-    <div class="row">
-      <select id="cat" aria-label="Type de travaux">
-        <option>Terrassement</option><option>Fondations</option><option>Ferraillage</option><option>Coffrage</option><option>Bétonnage</option><option>Maçonnerie</option><option>Étanchéité</option><option>Réseaux / lots techniques</option><option>Finitions</option><option>Réunion / visite</option><option>Réserve / problème</option><option selected>Autre</option>
+  <section data-tab="day">
+    <div class="page">
+      <div class="day"><div class="big" id="dayLabel"></div><input type="date" id="date" aria-label="Date de la journée"></div>
+      <div class="hours">
+        <div><label for="tin">Arrivée</label><input type="time" id="tin" value="08:00"></div>
+        <div><label for="tout">Heure de sortie</label><input type="time" id="tout"></div>
+        <div class="ot" id="ot"></div>
+      </div>
+      <label id="sentRow" class="chk" hidden><input type="checkbox" id="sent"> Déjà envoyé au comptable</label>
+      <label for="text" class="sub" style="display:block;margin:0 0 4px">Qu’est-ce qui a été accompli ?</label>
+      <textarea id="text" placeholder="Ex. : coulage du plancher haut, 18 m³ de béton, vibrage terminé à 15 h."></textarea>
+      <div class="row3">
+        <select id="nbloc" aria-label="Bloc"></select>
+        <select id="nniv" aria-label="Niveau"></select>
+        <input type="text" id="zone" placeholder="Zone / axe" aria-label="Zone ou axe">
+      </div>
+      <select id="cat" aria-label="Type de travaux" style="margin-top:8px">
+        <option>Terrassement</option><option>Fondations</option><option>Ferraillage</option><option>Coffrage</option><option>Bétonnage</option><option>Maçonnerie</option><option>Étanchéité</option><option>Réseaux / lots techniques</option><option>Finitions</option><option>Réunion / visite</option><option selected>Autre</option>
       </select>
-      <input type="text" id="zone" placeholder="Zone ou niveau (ex. R+3, axe B)" aria-label="Zone ou niveau">
+      <div id="staged" class="ph"></div>
+      <div class="act"><button id="pickNote">Joindre des photos</button><button class="p" id="add">Ajouter la note</button></div>
+      <input type="file" id="fileNote" accept="image/*" multiple hidden>
     </div>
-    <div id="staged" class="ph"></div>
-    <div class="act"><button id="pickNote">Joindre des photos</button><button class="p" id="add">Ajouter la note</button></div>
-    <input type="file" id="fileNote" accept="image/*" multiple hidden>
-  </div>
 
-  <div id="list"></div>
+    <div id="list"></div>
 
-  <h2>Photos de la journée</h2>
-  <div id="gal"></div>
-  <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button id="pickDay">Ajouter des photos</button><button id="share" hidden>Partager les photos</button></div>
-  <input type="file" id="fileDay" accept="image/*" multiple hidden>
+    <h2>Journal de chantier du jour</h2>
+    <div class="note">
+      <div class="row"><div><label for="jmeteo">Météo</label><select id="jmeteo"><option value="">—</option><option>Ensoleillé</option><option>Nuageux</option><option>Pluie</option><option>Vent fort</option><option>Froid</option><option>Forte chaleur</option></select></div>
+      <div><label for="jstop">Arrêt de travail (motif)</label><input type="text" id="jstop" placeholder="Ex. : pluie, matin"></div></div>
+      <div class="row"><div><label for="jinbar">Effectif Inbar Construction</label><input type="text" id="jinbar" inputmode="numeric" placeholder="Ex. : 14"></div>
+      <div><label for="jother">Autres intervenants</label><input type="text" id="jother" placeholder="Ex. : électricien 2, plombier 1"></div></div>
+      <label for="jmat">Matériel et engins</label><input type="text" id="jmat" placeholder="Ex. : grue, pompe à béton">
+      <label for="jdeliv">Livraisons</label><input type="text" id="jdeliv" placeholder="Ex. : béton 18 m³, acier HA12 2 t">
+      <label for="jrem">Remarques</label><textarea id="jrem" style="min-height:64px"></textarea>
+    </div>
 
-  <h2>Heures supplémentaires</h2>
-  <div class="note">
-    <div id="mtotal"></div>
-    <div id="otList" class="hist"></div>
-    <p class="sub" style="margin:14px 0 4px">Ajouter une journée passée (heures sup. seulement)</p>
-    <div class="hours" style="grid-template-columns:auto auto 1fr"><div><label for="pd">Date</label><input type="date" id="pd"></div><div><label for="po">Sortie</label><input type="time" id="po"></div><div><button class="p" id="padd">Enregistrer</button></div></div>
-  </div>
+    <h2>Photos de la journée</h2>
+    <div id="gal"></div>
+    <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button id="pickDay">Ajouter des photos</button><button id="share" hidden>Partager les photos</button></div>
+    <input type="file" id="fileDay" accept="image/*" multiple hidden>
 
-  <h2>Rapport pour le comptable</h2>
-  <div class="note">
-    <p id="pendInfo" class="sub" style="margin:0 0 8px"></p>
-    <textarea id="rep" readonly style="min-height:240px" aria-label="Aperçu du rapport"></textarea>
-    <p class="sub" style="margin:12px 0 4px">Numéro WhatsApp du comptable (facultatif, format 213550123456)</p>
-    <input type="text" id="num" inputmode="tel" placeholder="213550123456" aria-label="Numéro WhatsApp du comptable">
-    <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button class="p" id="wa">Envoyer par WhatsApp</button><button id="copy">Copier le rapport</button></div>
-    <p class="sub" style="margin:12px 0 4px">Une fois le message envoyé, appuyez ici : ces heures ne seront plus dans le prochain rapport.</p>
-    <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button id="mark">Marquer comme envoyé</button><button id="undo">Annuler le dernier marquage</button></div>
-  </div>
+    <h2>Journées précédentes</h2>
+    <input type="search" id="q" placeholder="Rechercher dans toutes les notes" aria-label="Rechercher">
+    <div class="hist" id="hist"></div>
+  </section>
 
-  <h2>Journées précédentes</h2>
-  <input type="search" id="q" placeholder="Rechercher dans toutes les notes" aria-label="Rechercher">
-  <div class="hist" id="hist"></div>
+  <section data-tab="res" hidden>
+    <h2 style="margin-top:0">Observations et réserves</h2>
+    <p id="osum" class="sub" style="margin:0 0 8px"></p>
+    <div class="note">
+      <div class="row3"><select id="obloc" aria-label="Bloc"></select><select id="oniv" aria-label="Niveau"></select><input type="text" id="ozone" placeholder="Zone / élément" aria-label="Zone ou élément"></div>
+      <textarea id="otext" placeholder="Ex. : nid de cailloux sur le poteau P4, enrobage insuffisant sur la poutre B3…" style="margin-top:8px"></textarea>
+      <div class="row3"><div><label for="ocomp">Entreprise</label><input type="text" id="ocomp"></div>
+      <div><label for="oprio">Priorité</label><select id="oprio"><option value="normale">Normale</option><option value="urgente">Urgente</option></select></div>
+      <div><label for="odue">À lever avant le</label><input type="date" id="odue"></div></div>
+      <div id="ostaged" class="ph"></div>
+      <div class="act"><button id="pickObs">Joindre des photos</button><button class="p" id="addObs">Ajouter l’observation</button></div>
+      <input type="file" id="fileObs" accept="image/*" multiple hidden>
+    </div>
+    <div class="row3" style="margin-top:12px"><select id="fbloc" aria-label="Filtrer par bloc"></select><select id="fniv" aria-label="Filtrer par niveau"></select>
+      <select id="fstat" aria-label="Filtrer par statut"><option value="open">À traiter</option><option value="done">Levées</option><option value="all">Toutes</option></select></div>
+    <div id="olist"></div>
+  </section>
+
+  <section data-tab="pv" hidden>
+    <h2 style="margin-top:0">PV de réunion de chantier</h2>
+    <div class="note">
+      <div class="row3"><div><label for="pvNum">PV n°</label><input type="text" id="pvNum" inputmode="numeric"></div>
+      <div><label for="pvDate">Date de la réunion</label><input type="date" id="pvDate"></div>
+      <div><label for="pvFrom">Période depuis le</label><input type="date" id="pvFrom"></div></div>
+      <label for="pvAtt">Présents (un par ligne)</label><textarea id="pvAtt" placeholder="Nom – Fonction – Société"></textarea>
+      <label for="pvDec">Points abordés, décisions, actions à suivre</label><textarea id="pvDec" style="min-height:140px" placeholder="Un point par ligne."></textarea>
+      <div class="row"><div><label for="pvNext">Prochaine réunion</label><input type="date" id="pvNext"></div>
+      <label class="chk" style="margin-top:22px"><input type="checkbox" id="pvPhotos" checked> Photos des observations</label></div>
+      <p class="sub" style="margin:8px 0 0">Le PV reprend automatiquement l’avancement par bloc et par niveau, le journal et les observations de la période.</p>
+      <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button class="p" id="pvPrint">Aperçu / PDF</button><button id="pvDoc">Télécharger (Word)</button><button id="pvSave">Enregistrer ce PV</button></div>
+    </div>
+  </section>
+
+  <section data-tab="hrs" hidden>
+    <h2 style="margin-top:0">Heures supplémentaires</h2>
+    <div class="note">
+      <div id="mtotal"></div>
+      <div id="otList" class="hist"></div>
+      <p class="sub" style="margin:14px 0 4px">Ajouter une journée passée (heures sup. seulement)</p>
+      <div class="hours" style="grid-template-columns:auto auto 1fr"><div><label for="pd">Date</label><input type="date" id="pd"></div><div><label for="po">Sortie</label><input type="time" id="po"></div><div><button class="p" id="padd">Enregistrer</button></div></div>
+    </div>
+    <h2>Rapport pour le comptable</h2>
+    <div class="note">
+      <p id="pendInfo" class="sub" style="margin:0 0 8px"></p>
+      <textarea id="rep" readonly style="min-height:240px" aria-label="Aperçu du rapport"></textarea>
+      <p class="sub" style="margin:12px 0 4px">Numéro WhatsApp du comptable (facultatif, format 213550123456)</p>
+      <input type="text" id="num" inputmode="tel" placeholder="213550123456" aria-label="Numéro WhatsApp du comptable">
+      <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button class="p" id="wa">Envoyer par WhatsApp</button><button id="copy">Copier le rapport</button></div>
+      <p class="sub" style="margin:12px 0 4px">Une fois le message envoyé, appuyez ici : ces heures ne seront plus dans le prochain rapport.</p>
+      <div class="act" style="justify-content:flex-start;flex-wrap:wrap"><button id="mark">Marquer comme envoyé</button><button id="undo">Annuler le dernier marquage</button></div>
+    </div>
+  </section>
+
+  <section data-tab="set" hidden>
+    <h2 style="margin-top:0">Réglages du chantier</h2>
+    <div class="note">
+      <label for="sproj">Projet / chantier</label><input type="text" id="sproj" placeholder="Ex. : Résidence R+6, Tigzirt">
+      <label for="sprom">Maître d’ouvrage (promoteur)</label><input type="text" id="sprom">
+      <label for="scomp">Entreprise réalisatrice</label><input type="text" id="scomp" placeholder="Inbar Construction">
+      <label for="sauth">Rédigé par</label><input type="text" id="sauth" placeholder="Votre nom, architecte">
+      <div class="row"><div><label for="sblocs">Blocs (un par ligne)</label><textarea id="sblocs" style="min-height:90px"></textarea></div>
+      <div><label for="sniv">Niveaux (un par ligne, du bas vers le haut)</label><textarea id="sniv" style="min-height:90px"></textarea></div></div>
+      <div class="act"><button class="p" id="ssave">Enregistrer les réglages</button></div>
+    </div>
+    <div class="act" style="justify-content:flex-start;margin-top:24px"><button id="logout">Déconnexion</button></div>
+  </section>
 </div>
+
+<nav class="tabs" id="tabs" aria-label="Navigation">
+  <button data-t="day" class="on">Journée</button><button data-t="res">Réserves</button><button data-t="pv">PV</button><button data-t="hrs">Heures</button><button data-t="set">Réglages</button>
+</nav>
 
 <div class="toast" id="toast" role="status"></div>
 

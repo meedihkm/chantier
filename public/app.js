@@ -1,7 +1,7 @@
 (function () {
 "use strict";
 var $ = function (i) { return document.getElementById(i); };
-var S = { user: "", days: {}, notes: [], photos: [], pending: {}, num: "" };
+var S = { user: "", days: {}, notes: [], photos: [], pending: {}, num: "", obs: [], pendingO: {}, settings: {} };
 var up = [], urls = {}, staged = [], viewing = null, mode = "login", busy = false, again = false;
 var dateEl = $("date");
 
@@ -24,13 +24,14 @@ function fridayMins(d) { var j = S.days[d]; if (!j || !j.out) return 0; var m = 
 function otOf(d) { if (isFri(d)) return 0; var j = S.days[d]; if (!j || !j.out) return 0; var o = mins(j.out); return o > 960 ? o - 960 : 0; }
 function hm(m) { return Math.floor(m / 60) + " h " + pad(m % 60); }
 function dayNotes(d) { return S.notes.filter(function (n) { return n.date === d; }).sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : 0; }); }
+function findPhoto(id) { return S.photos.concat(up).filter(function (p) { return p.id === id; })[0]; }
 function allPhotos(d) { return S.photos.filter(function (p) { return p.date === d; }).concat(up.filter(function (u) { return u.date === d; })); }
 
 /* ---------- stockage local ---------- */
-function persist() { try { localStorage.setItem("carnet:s:" + S.user, JSON.stringify({ days: S.days, notes: S.notes, photos: S.photos, pending: S.pending, num: S.num })); } catch (e) {} }
+function persist() { try { localStorage.setItem("carnet:s:" + S.user, JSON.stringify({ days: S.days, notes: S.notes, photos: S.photos, pending: S.pending, num: S.num, obs: S.obs, pendingO: S.pendingO, settings: S.settings })); } catch (e) {} }
 function restore(u) {
-  S.user = u; S.days = {}; S.notes = []; S.photos = []; S.pending = {}; S.num = "";
-  try { var x = JSON.parse(localStorage.getItem("carnet:s:" + u) || "null"); if (x) { S.days = x.days || {}; S.notes = x.notes || []; S.photos = x.photos || []; S.pending = x.pending || {}; S.num = x.num || ""; } } catch (e) {}
+  S.user = u; S.days = {}; S.notes = []; S.photos = []; S.pending = {}; S.num = ""; S.obs = []; S.pendingO = {}; S.settings = {};
+  try { var x = JSON.parse(localStorage.getItem("carnet:s:" + u) || "null"); if (x) { S.days = x.days || {}; S.notes = x.notes || []; S.photos = x.photos || []; S.pending = x.pending || {}; S.num = x.num || ""; S.obs = x.obs || []; S.pendingO = x.pendingO || {}; S.settings = x.settings || {}; } } catch (e) {}
 }
 var dbp = null;
 function idb() {
@@ -72,7 +73,7 @@ function applyRemote(r) {
   if (S.user !== r.username) restore(r.username);
   try { localStorage.setItem("carnet:user", r.username); } catch (e) {}
   var days = {}, notes = [];
-  r.days.forEach(function (x) { days[x.date] = { arr: x.arr, out: x.out, sent: x.sent || "" }; });
+  r.days.forEach(function (x) { days[x.date] = { arr: x.arr, out: x.out, sent: x.sent || "", journal: x.journal || {} }; });
   notes = r.notes.slice();
   Object.keys(S.pending).forEach(function (d) {
     if (S.days[d]) days[d] = S.days[d]; else delete days[d];
@@ -80,6 +81,9 @@ function applyRemote(r) {
     S.notes.forEach(function (n) { if (n.date === d) notes.push(n); });
   });
   S.days = days; S.notes = notes; S.photos = r.photos; if (r.num) S.num = r.num;
+  S.settings = r.settings || {};
+  var obs = (r.obs || []).filter(function (o) { return !S.pendingO[o.id]; });
+  S.obs.forEach(function (o) { if (S.pendingO[o.id]) obs.push(o); }); S.obs = obs;
   persist(); $("num").value = S.num;
 }
 function uploadAll() {
@@ -95,15 +99,26 @@ function uploadAll() {
     });
   }, Promise.resolve());
 }
+function flushObs() {
+  return Object.keys(S.pendingO).reduce(function (p, id) {
+    return p.then(function () {
+      var v = S.pendingO[id], o = S.obs.filter(function (x) { return x.id === id; })[0];
+      function done() { if (S.pendingO[id] === v) delete S.pendingO[id]; persist(); }
+      if (!o) { delete S.pendingO[id]; return; }
+      if (o.deleted) return api("DELETE", "/api/obs/" + id).then(function () { S.obs = S.obs.filter(function (x) { return x.id !== id; }); done(); });
+      return api("PUT", "/api/obs/" + id, { day: o.day, bloc: o.bloc, niveau: o.niveau, zone: o.zone, text: o.text, company: o.company, priority: o.priority, due: o.due, status: o.status, closed: o.closed }).then(done);
+    });
+  }, Promise.resolve());
+}
 function flush() {
   if (busy) return Promise.resolve();
   busy = true;
   return Object.keys(S.pending).reduce(function (p, d) {
     return p.then(function () {
       var v = S.pending[d], j = S.days[d] || {};
-      return api("PUT", "/api/day/" + d, { arr: j.arr || "08:00", out: j.out || "", sent: j.sent || "", notes: dayNotes(d) }).then(function () { if (S.pending[d] === v) delete S.pending[d]; persist(); });
+      return api("PUT", "/api/day/" + d, { arr: j.arr || "08:00", out: j.out || "", sent: j.sent || "", journal: j.journal || {}, notes: dayNotes(d) }).then(function () { if (S.pending[d] === v) delete S.pending[d]; persist(); });
     });
-  }, Promise.resolve()).then(uploadAll).then(function () { setSync("Synchronisé."); })
+  }, Promise.resolve()).then(flushObs).then(uploadAll).then(function () { setSync("Synchronisé."); })
     .catch(function (e) { if (!e || e.code !== 401) setSync("Hors ligne : envoi plus tard."); })
     .then(function () { busy = false; render(); if (again) { again = false; flush(); } });
 }
@@ -140,7 +155,7 @@ function showOt(d) {
 }
 function render() {
   var d = dateEl.value || today();
-  $("who").textContent = S.user ? S.user + " · " : "";
+  fillSelects(); $("who").textContent = S.user ? S.user + " · " : "";
   $("dayLabel").textContent = fmt(d);
   var j = S.days[d] || {};
   if (document.activeElement !== $("tin")) $("tin").value = j.arr || "08:00";
@@ -149,14 +164,14 @@ function render() {
   var ns = dayNotes(d), ph = allPhotos(d), ids = {}, html = "";
   ns.forEach(function (n) { ids[n.id] = 1; });
   ns.forEach(function (n) {
-    html += '<div class="note"><div class="meta"><strong>' + esc(n.time) + '</strong><span class="tag">' + esc(n.cat) + '</span>' + (n.zone ? '<span>' + esc(n.zone) + '</span>' : '') + '<button class="del" data-id="' + esc(n.id) + '">Supprimer</button></div><p class="txt">' + esc(n.text) + '</p>' +
+    html += '<div class="note"><div class="meta"><strong>' + esc(n.time) + '</strong><span class="tag">' + esc(n.cat) + '</span>' + (locStr(n) ? '<span>' + esc(locStr(n)) + '</span>' : '') + '<button class="del" data-id="' + esc(n.id) + '">Supprimer</button></div><p class="txt">' + esc(n.text) + '</p>' +
       (function () { var l = ph.filter(function (p) { return p.note === n.id; }); return l.length ? '<div class="ph">' + thumbs(l) + '</div>' : ""; })() + '</div>';
   });
   $("list").innerHTML = html || '<div class="empty">Aucune note pour cette journée. Ajoutez la première ci-dessus.</div>';
-  var free = ph.filter(function (p) { return !p.note || !ids[p.note]; });
+  var free = ph.filter(function (p) { return !p.note || (!ids[p.note] && p.note.indexOf("obs-") !== 0); });
   $("gal").innerHTML = free.length ? '<div class="ph">' + thumbs(free) + '</div>' : '<div class="empty">Aucune photo pour le moment.</div>';
   $("share").hidden = !(ph.length && navigator.canShare);
-  renderHist(); renderReport();
+  renderHist(); renderReport(); renderJournal(d); renderObs();
 }
 function renderHist() {
   var q = $("q").value.trim().toLowerCase(), cur = dateEl.value, map = {}, html = "";
@@ -215,7 +230,7 @@ $("share").onclick = function () {
 };
 function openViewer(e) {
   var b = e.target.closest("button[data-p]"); if (!b) return;
-  var id = b.getAttribute("data-p"), p = allPhotos(dateEl.value).filter(function (x) { return x.id === id; })[0]; if (!p) return;
+  var id = b.getAttribute("data-p"), p = findPhoto(id); if (!p) return;
   viewing = p; $("vimg").src = src(p); $("viewer").hidden = false;
 }
 $("list").addEventListener("click", openViewer); $("gal").addEventListener("click", openViewer);
@@ -232,7 +247,7 @@ $("add").onclick = function () {
   var t = $("text").value.trim();
   if (!t) { toast("Écrivez d’abord la note"); $("text").focus(); return; }
   var now = new Date(), d = dateEl.value || today(), id = uuid().slice(0, 18);
-  S.notes.push({ id: id, date: d, time: pad(now.getHours()) + ":" + pad(now.getMinutes()), cat: $("cat").value, zone: $("zone").value.trim(), text: t });
+  S.notes.push({ id: id, date: d, time: pad(now.getHours()) + ":" + pad(now.getMinutes()), cat: $("cat").value, zone: $("zone").value.trim(), bloc: $("nbloc").value, niveau: $("nniv").value, text: t });
   var ps = staged.map(function (s) { return { id: uuid(), user: S.user, date: d, note: id, blob: s.blob }; }); staged = []; renderStaged();
   queue(ps).then(function () { persist(); pushDay(d); $("text").value = ""; render(); toast("Note ajoutée"); });
 };
@@ -245,12 +260,12 @@ $("list").addEventListener("click", function (e) {
   up = up.filter(function (u) { return u.note !== id; }); S.photos = S.photos.filter(function (p) { return p.note !== id; });
   persist(); pushDay(n.date); render();
 });
-function onTimes() { var d = dateEl.value; var pj = S.days[d] || {}; S.days[d] = { arr: $("tin").value, out: $("tout").value, sent: pj.out === $("tout").value ? (pj.sent || "") : "" }; persist(); pushDay(d); showOt(d); renderReport(); }
+function onTimes() { var d = dateEl.value; var pj = S.days[d] || {}; S.days[d] = { arr: $("tin").value, out: $("tout").value, sent: pj.out === $("tout").value ? (pj.sent || "") : "", journal: pj.journal || {} }; persist(); pushDay(d); showOt(d); renderReport(); }
 $("tin").onchange = onTimes; $("tout").onchange = onTimes;
 $("padd").onclick = function () {
   var d = $("pd").value, o = $("po").value;
   if (!d || !o) { toast("Choisissez la date et l’heure de sortie"); return; }
-  var j = S.days[d] || {}; S.days[d] = { arr: j.arr || "08:00", out: o, sent: j.out === o ? (j.sent || "") : "" }; persist(); pushDay(d); dateEl.value = d; render();
+  var j = S.days[d] || {}; S.days[d] = { arr: j.arr || "08:00", out: o, sent: j.out === o ? (j.sent || "") : "", journal: j.journal || {} }; persist(); pushDay(d); dateEl.value = d; render();
   toast(isFri(d) ? "Vendredi enregistré (travaillé)" : otOf(d) ? "Heures sup. enregistrées : " + hm(otOf(d)) : "Enregistré (pas d’heure sup.)");
 };
 $("otList").onclick = $("hist").onclick = function (e) {
@@ -263,7 +278,7 @@ $("q").oninput = renderHist; dateEl.onchange = render;
 function iso(dt) { return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()); }
 function parseD(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
 function fmtShort(d) { return parseD(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
-function noteLines(ns) { return ns.map(function (n) { return "   - [" + n.cat + (n.zone ? " – " + n.zone : "") + "] " + n.text.replace(/\n/g, "\n     "); }); }
+function noteLines(ns) { return ns.map(function (n) { return "   - [" + n.cat + (locStr(n) ? " – " + locStr(n) : "") + "] " + n.text.replace(/\n/g, "\n     "); }); }
 function allDates() { var m = {}; Object.keys(S.days).forEach(function (d) { m[d] = 1; }); S.notes.forEach(function (n) { m[n.date] = 1; }); return Object.keys(m).sort(); }
 function isPending(d) { var x = S.days[d] || {}; if (x.sent) return false; return isFri(d) ? worked(d) : otOf(d) > 0; }
 function pendingDates() { return allDates().filter(isPending); }
@@ -352,10 +367,187 @@ $("logout").onclick = function () {
   });
 };
 
+/* ---------- chantier : blocs, niveaux, réglages ---------- */
+var DEF_NIV = ["Sous-sol", "RDC", "R+1", "R+2", "R+3", "R+4", "R+5", "R+6", "Attique", "Toiture"], cfgSig = "";
+function cfg() {
+  var s = S.settings || {};
+  return { blocs: s.blocs && s.blocs.length ? s.blocs : ["Bloc A", "Bloc B"], niveaux: s.niveaux && s.niveaux.length ? s.niveaux : DEF_NIV,
+    company: s.company || "Inbar Construction", project: s.project || "", promoter: s.promoter || "", author: s.author || "", attendees: s.attendees || "", lastPv: s.lastPv || null };
+}
+function locStr(o) { return [o.bloc, o.niveau, o.zone].filter(Boolean).join(" · "); }
+function ord(arr, v) { var i = arr.indexOf(v); return i < 0 ? 999 : i; }
+function grp(list, gb, gn) {
+  var c = cfg(), m = {};
+  list.forEach(function (x) { var b = gb(x) || "Bloc non précisé", n = gn(x) || "Niveau non précisé"; ((m[b] = m[b] || {})[n] = m[b][n] || []).push(x); });
+  return Object.keys(m).sort(function (a, b) { return ord(c.blocs, a) - ord(c.blocs, b); }).map(function (b) {
+    return { b: b, ns: Object.keys(m[b]).sort(function (a, z) { return ord(c.niveaux, a) - ord(c.niveaux, z); }).map(function (n) { return { n: n, items: m[b][n] }; }) };
+  });
+}
+function fillSel(id, items, first) {
+  var el = $(id), cur = el.value;
+  el.innerHTML = '<option value="">' + first + "</option>" + items.map(function (x) { return "<option>" + esc(x) + "</option>"; }).join("");
+  if (cur && items.indexOf(cur) >= 0) el.value = cur;
+}
+function fillSelects() {
+  var c = cfg(), sig = JSON.stringify(c); if (sig === cfgSig) return; cfgSig = sig;
+  fillSel("nbloc", c.blocs, "Bloc"); fillSel("obloc", c.blocs, "Bloc"); fillSel("fbloc", c.blocs, "Tous les blocs");
+  fillSel("nniv", c.niveaux, "Niveau"); fillSel("oniv", c.niveaux, "Niveau"); fillSel("fniv", c.niveaux, "Tous les niveaux");
+  $("ocomp").placeholder = c.company;
+  [["sproj", c.project], ["sprom", c.promoter], ["scomp", c.company], ["sauth", c.author]].forEach(function (p) { if (document.activeElement !== $(p[0])) $(p[0]).value = p[1]; });
+  if (document.activeElement !== $("sblocs")) $("sblocs").value = c.blocs.join("\n");
+  if (document.activeElement !== $("sniv")) $("sniv").value = c.niveaux.join("\n");
+}
+function saveSettings() {
+  persist();
+  return api("PUT", "/api/settings", { settings: S.settings }).catch(function () { toast("Connexion requise pour enregistrer les réglages"); throw 0; });
+}
+$("ssave").onclick = function () {
+  var lines = function (id) { return $(id).value.split("\n").map(function (x) { return x.trim(); }).filter(Boolean); };
+  S.settings = Object.assign({}, S.settings, { blocs: lines("sblocs"), niveaux: lines("sniv"), company: $("scomp").value.trim(), project: $("sproj").value.trim(), promoter: $("sprom").value.trim(), author: $("sauth").value.trim() });
+  saveSettings().then(function () { cfgSig = ""; fillSelects(); render(); toast("Réglages enregistrés"); }, function () {});
+};
+function showTab(t) {
+  document.querySelectorAll("section[data-tab]").forEach(function (s) { s.hidden = s.getAttribute("data-tab") !== t; });
+  document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === t); });
+  try { localStorage.setItem("carnet:tab", t); } catch (e) {}
+  if (t === "pv") initPv();
+  window.scrollTo(0, 0);
+}
+$("tabs").onclick = function (e) { var b = e.target.closest("button"); if (b) showTab(b.getAttribute("data-t")); };
+
+/* ---------- journal de chantier ---------- */
+var JF = { meteo: "jmeteo", inbar: "jinbar", other: "jother", stoppage: "jstop", material: "jmat", deliveries: "jdeliv", remarks: "jrem" };
+function renderJournal(d) { var jj = (S.days[d] || {}).journal || {}; Object.keys(JF).forEach(function (k) { var el = $(JF[k]); if (document.activeElement !== el) el.value = jj[k] || ""; }); }
+function saveJournal() {
+  var d = dateEl.value, x = S.days[d] || (S.days[d] = { arr: "08:00", out: "", sent: "" }), jj = {};
+  Object.keys(JF).forEach(function (k) { var v = $(JF[k]).value.trim(); if (v) jj[k] = v; });
+  x.journal = jj; persist(); pushDay(d);
+}
+Object.keys(JF).forEach(function (k) { $(JF[k]).onchange = saveJournal; });
+
+/* ---------- observations et réserves ---------- */
+var stagedO = [];
+function renderStagedO() { $("ostaged").innerHTML = stagedO.map(function (s, i) { return '<button class="th" data-s="' + i + '" aria-label="Retirer cette photo"><img alt="Photo à joindre" src="' + s.url + '"></button>'; }).join(""); }
+pickFiles($("fileObs"), function (bs) { bs.forEach(function (b) { stagedO.push({ blob: b, url: URL.createObjectURL(b) }); }); renderStagedO(); });
+$("pickObs").onclick = function () { $("fileObs").click(); };
+$("ostaged").onclick = function (e) { var b = e.target.closest("button"); if (!b) return; stagedO.splice(+b.getAttribute("data-s"), 1); renderStagedO(); };
+function pushObs(id) { S.pendingO[id] = (S.pendingO[id] || 0) + 1; persist(); if (busy) again = true; else flush(); }
+function overdue(o) { return !!(o.due && o.due < today() && o.status !== "levé"); }
+$("addObs").onclick = function () {
+  var t = $("otext").value.trim(); if (!t) { toast("Décrivez l’observation"); $("otext").focus(); return; }
+  var id = "obs-" + uuid().slice(0, 12), d = today();
+  S.obs.push({ id: id, day: d, bloc: $("obloc").value, niveau: $("oniv").value, zone: $("ozone").value.trim(), text: t, company: $("ocomp").value.trim() || cfg().company, priority: $("oprio").value, due: $("odue").value, status: "ouvert", closed: "" });
+  var ps = stagedO.map(function (s) { return { id: uuid(), user: S.user, date: d, note: id, blob: s.blob }; }); stagedO = []; renderStagedO();
+  queue(ps).then(function () { persist(); pushObs(id); $("otext").value = ""; $("ozone").value = ""; $("odue").value = ""; $("oprio").value = "normale"; render(); toast("Observation ajoutée"); });
+};
+function renderObs() {
+  var fb = $("fbloc").value, fn = $("fniv").value, fs = $("fstat").value;
+  var all = S.obs.filter(function (o) { return !o.deleted; }), open = all.filter(function (o) { return o.status !== "levé"; });
+  var late = open.filter(overdue).length, urg = open.filter(function (o) { return o.priority === "urgente"; }).length;
+  $("osum").innerHTML = open.length ? "<strong>" + open.length + "</strong> à traiter" + (late ? ' · <span class="late">' + late + " en retard</span>" : "") + (urg ? " · " + urg + " urgente" + (urg > 1 ? "s" : "") : "") : "Aucune observation à traiter.";
+  var list = all.filter(function (o) { return (!fb || o.bloc === fb) && (!fn || o.niveau === fn) && (fs === "all" || (fs === "open" ? o.status !== "levé" : o.status === "levé")); });
+  list.sort(function (a, b) { return (a.priority === "urgente" ? 0 : 1) - (b.priority === "urgente" ? 0 : 1) || (a.due || "9").localeCompare(b.due || "9"); });
+  var nxt = { "ouvert": "Passer en cours", "en cours": "Marquer levé", "levé": "Rouvrir" }, html = "";
+  grp(list, function (o) { return o.bloc; }, function (o) { return o.niveau; }).forEach(function (g) {
+    html += '<div class="grp">' + esc(g.b) + "</div>";
+    g.ns.forEach(function (n) {
+      html += '<div class="lvl">' + esc(n.n) + "</div>";
+      n.items.forEach(function (o) {
+        var ph = S.photos.concat(up).filter(function (p) { return p.note === o.id; });
+        html += '<div class="note"><div class="meta"><span class="tag">' + esc(o.status) + "</span>" + (o.priority === "urgente" ? '<span class="tag urg">Urgente</span>' : "") + (o.due ? '<span class="' + (overdue(o) ? "late" : "") + '">avant le ' + esc(fmtShort(o.due)) + "</span>" : "") + '<button class="stbtn" data-ost="' + esc(o.id) + '">' + nxt[o.status] + '</button></div><p class="txt">' + esc(o.text) + '</p><div class="meta">' + (o.zone ? esc(o.zone) + " · " : "") + esc(o.company || "") + " · signalée le " + esc(fmtShort(o.day)) + (o.closed ? " · levée le " + esc(fmtShort(o.closed)) : "") + '<button class="del" data-odel="' + esc(o.id) + '">Supprimer</button></div>' + (ph.length ? '<div class="ph">' + thumbs(ph) + "</div>" : "") + "</div>";
+      });
+    });
+  });
+  $("olist").innerHTML = html || '<div class="empty">Aucune observation dans cette vue.</div>';
+}
+["fbloc", "fniv", "fstat"].forEach(function (id) { $(id).onchange = renderObs; });
+$("olist").addEventListener("click", function (e) {
+  var b = e.target.closest("button"); if (!b) return;
+  if (b.hasAttribute("data-p")) { openViewer(e); return; }
+  var id = b.getAttribute("data-ost") || b.getAttribute("data-odel"); if (!id) return;
+  var o = S.obs.filter(function (x) { return x.id === id; })[0]; if (!o) return;
+  if (b.hasAttribute("data-ost")) {
+    o.status = o.status === "ouvert" ? "en cours" : o.status === "en cours" ? "levé" : "ouvert"; o.closed = o.status === "levé" ? today() : "";
+    persist(); pushObs(id); render(); return;
+  }
+  if (b.getAttribute("data-arm") !== "1") { b.setAttribute("data-arm", "1"); b.textContent = "Confirmer ?"; setTimeout(function () { b.setAttribute("data-arm", "0"); b.textContent = "Supprimer"; }, 3000); return; }
+  o.deleted = true; up.filter(function (u) { return u.note === id; }).forEach(function (u) { idbDel(u.id); });
+  up = up.filter(function (u) { return u.note !== id; }); S.photos = S.photos.filter(function (p) { return p.note !== id; });
+  persist(); pushObs(id); render();
+});
+
+/* ---------- PV de réunion de chantier ---------- */
+var pvInit = false;
+function initPv() {
+  if (pvInit) return; pvInit = true;
+  var c = cfg(), f = "";
+  if (c.lastPv) { var p = parseD(c.lastPv.date); p.setDate(p.getDate() + 1); f = iso(p); }
+  $("pvDate").value = today(); $("pvNum").value = c.lastPv ? c.lastPv.num + 1 : 1; $("pvFrom").value = f; $("pvAtt").value = c.attendees;
+}
+function pvData() { return { date: $("pvDate").value || today(), num: $("pvNum").value || "", from: $("pvFrom").value, att: $("pvAtt").value, dec: $("pvDec").value, next: $("pvNext").value, photos: $("pvPhotos").checked }; }
+var PVCSS = "body{font-family:Arial,Helvetica,sans-serif;font-size:12pt;color:#111;margin:24px}h1{font-size:17pt;text-align:center;margin:0 0 14px}h2{font-size:13pt;border-bottom:1px solid #333;margin:20px 0 6px;padding-bottom:2px}h3{font-size:12pt;margin:12px 0 2px}h3.s{margin-top:14px;color:#1f4f8f}.lv{margin:6px 0 0;font-weight:bold;color:#555}ul,ol{margin:2px 0 6px 18px;padding:0}li{margin:2px 0}table.hd{width:100%;border-collapse:collapse}table.hd td{border:1px solid #888;padding:4px 8px}table.hd td:first-child{width:32%;background:#eee;font-weight:bold}.im img{max-width:210px;max-height:160px;margin:4px 6px 0 0}.sig{display:flex;gap:40px;margin-top:40px}.sig div{flex:1;border-top:1px solid #333;padding-top:4px;text-align:center}";
+function pvHtml(o) {
+  var c = cfg(), from = o.from || "", to = o.date;
+  function inP(d) { return (!from || d >= from) && d <= to; }
+  function lis(list, fn) { return "<ul>" + list.map(function (x) { return "<li>" + fn(x) + "</li>"; }).join("") + "</ul>"; }
+  function grpHtml(list, fn) {
+    return grp(list, function (x) { return x.bloc; }, function (x) { return x.niveau; }).map(function (g) {
+      return "<h3>" + esc(g.b) + "</h3>" + g.ns.map(function (n) { return '<p class="lv">' + esc(n.n) + "</p>" + lis(n.items, fn); }).join("");
+    }).join("");
+  }
+  var notes = S.notes.filter(function (n) { return inP(n.date); }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.time < b.time ? -1 : 1; });
+  var prog = grpHtml(notes, function (n) { return esc(fmtShort(n.date)) + " — <i>" + esc(n.cat) + "</i>" + (n.zone ? " (" + esc(n.zone) + ")" : "") + " : " + esc(n.text).replace(/\n/g, "<br>"); }) || "<p>Aucun travail noté sur la période.</p>";
+  var jl = Object.keys(S.days).filter(inP).sort().map(function (d) {
+    var jj = S.days[d].journal || {}, a = [];
+    if (jj.meteo) a.push("Météo : " + esc(jj.meteo));
+    if (jj.inbar) a.push("Effectif " + esc(c.company) + " : " + esc(jj.inbar));
+    if (jj.other) a.push("Autres intervenants : " + esc(jj.other));
+    if (jj.stoppage) a.push("<b>Arrêt de travail : " + esc(jj.stoppage) + "</b>");
+    if (jj.material) a.push("Matériel : " + esc(jj.material));
+    if (jj.deliveries) a.push("Livraisons : " + esc(jj.deliveries));
+    if (jj.remarks) a.push("Remarques : " + esc(jj.remarks));
+    return a.length ? "<li>" + esc(fmt(d)) + " — " + a.join(" · ") + "</li>" : "";
+  }).join("");
+  var obs = S.obs.filter(function (x) { return !x.deleted; });
+  function oLine(x) {
+    var ph = o.photos ? S.photos.filter(function (p) { return p.note === x.id; }).map(function (p) { return '<img src="/api/photo/' + p.id + '">'; }).join("") : "";
+    return (x.priority === "urgente" ? "<b>[URGENT]</b> " : "") + esc(x.text) + (x.zone ? " (" + esc(x.zone) + ")" : "") + (x.status === "en cours" ? " — <i>en cours</i>" : "") + (x.due && x.status !== "levé" ? " — à lever avant le " + esc(fmtShort(x.due)) + (x.due < today() ? " <b>(en retard)</b>" : "") : "") + (ph ? '<div class="im">' + ph + "</div>" : "");
+  }
+  var sub = function (t, l) { return '<h3 class="s">' + t + " (" + l.length + ")</h3>" + (l.length ? grpHtml(l, oLine) : "<p>Néant.</p>"); };
+  var nw = obs.filter(function (x) { return inP(x.day); }), lev = obs.filter(function (x) { return x.status === "levé" && x.closed && inP(x.closed); }), opn = obs.filter(function (x) { return x.status !== "levé"; });
+  var att = o.att.split("\n").map(function (x) { return x.trim(); }).filter(Boolean), dec = o.dec.split("\n").map(function (x) { return x.trim(); }).filter(Boolean);
+  var row = function (a, b) { return b ? "<tr><td>" + a + "</td><td>" + esc(b) + "</td></tr>" : ""; };
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>PV n° ' + esc(o.num) + "</title><style>" + PVCSS + "</style></head><body><h1>PROCÈS-VERBAL DE RÉUNION DE CHANTIER N° " + esc(o.num) + '</h1><table class="hd">' +
+    row("Projet", c.project) + row("Maître d’ouvrage", c.promoter) + row("Entreprise réalisatrice", c.company) + row("Date de la réunion", fmt(o.date)) + row("Période couverte", (from ? "du " + fmtShort(from) + " " : "jusqu’") + "au " + fmtShort(to)) + row("Rédigé par", c.author) + "</table>" +
+    "<h2>Présents</h2>" + (att.length ? lis(att, esc) : "<p>—</p>") +
+    "<h2>1. Avancement des travaux par bloc et par niveau</h2>" + prog +
+    "<h2>2. Journal de chantier</h2>" + (jl ? "<ul>" + jl + "</ul>" : "<p>Aucune donnée saisie sur la période.</p>") +
+    "<h2>3. Observations et réserves</h2>" + sub("Nouvelles observations", nw) + sub("Levées sur la période", lev) + sub("Toutes les réserves restant à lever", opn) +
+    "<h2>4. Points abordés et décisions</h2>" + (dec.length ? "<ol>" + dec.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ol>" : "<p>—</p>") +
+    "<h2>5. Prochaine réunion</h2><p>" + (o.next ? esc(fmt(o.next)) : "À fixer") + '</p><div class="sig"><div>Le maître d’œuvre / le représentant du maître d’ouvrage</div><div>' + esc(c.company) + "</div></div></body></html>";
+}
+$("pvPrint").onclick = function () {
+  var w = null; try { w = window.open("", "_blank"); } catch (e) {}
+  if (!w) { toast("Fenêtre bloquée : utilisez « Télécharger (Word) »"); return; }
+  w.document.open(); w.document.write(pvHtml(pvData())); w.document.close();
+  setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 800);
+};
+$("pvDoc").onclick = function () {
+  var o = pvData(); o.photos = false;
+  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + pvHtml(o)], { type: "application/msword" })); a.download = "PV-" + o.num + ".doc";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); toast("PV téléchargé (sans photos)");
+};
+$("pvSave").onclick = function () {
+  var n = parseInt($("pvNum").value, 10); if (!(n > 0)) { toast("Numéro de PV invalide"); return; }
+  S.settings = Object.assign({}, S.settings, { attendees: $("pvAtt").value, lastPv: { num: n, date: $("pvDate").value || today() } });
+  saveSettings().then(function () { pvInit = false; initPv(); $("pvDec").value = ""; $("pvNext").value = ""; toast("PV n° " + n + " enregistré"); }, function () {});
+};
+
 /* ---------- démarrage ---------- */
 setInterval(function () { var a = document.activeElement; if (a && (a.id === "tin" || a.id === "tout")) return; if (S.user) flush().then(refresh); }, 30000);
 window.addEventListener("online", function () { if (S.user) flush().then(refresh); });
 document.addEventListener("visibilitychange", function () { if (!document.hidden && S.user) flush().then(refresh); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(function () {});
-render(); boot();
+var tab0 = "day"; try { tab0 = localStorage.getItem("carnet:tab") || "day"; } catch (e) {}
+showTab(tab0); render(); boot();
 })();
